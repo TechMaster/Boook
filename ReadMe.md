@@ -8,9 +8,10 @@ Một người bình thường vừa có thể đăng ký để mua sách (tải
 Người dùng không đăng ký thành viên sẽ chỉ được xem thông tin sách nhưng không được tải về.
 
 Như vậy công ty có nhiều địa chỉ tên miền
-1- https://www.boook.com (dành cho mọi người user xem, tải sách)
-2- https://admin.boook.com (dành cho admin để tạo category mới, xem danh sách các tác giả)
-3- https://write.boook.com (dành cho tác giả viết sách riêng của mình, xem được bao nhiều truy cập và mua sách)
+
+1. https://www.boook.com (dành cho mọi người user xem, tải sách)
+2. https://admin.boook.com (dành cho admin để tạo category mới, xem danh sách các tác giả)
+3. https://write.boook.com (dành cho tác giả viết sách riêng của mình, xem được bao nhiều truy cập và mua sách)
 
 # Một số tính năng chính
 Đây là hệ thống có nhiều web application sử dụng công nghệ khác nhau:
