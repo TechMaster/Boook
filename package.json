@@ -11,5 +11,14 @@
     "automation"
   ],
   "author": "Trịnh Minh Cường",
-  "license": "MIT"
+  "license": "MIT",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TechMaster/Boook.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TechMaster/Boook/issues"
+  },
+  "homepage": "https://github.com/TechMaster/Boook#readme"
 }
