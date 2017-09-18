@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const _ = require("lodash");
 const passport = require("passport");
 const passportJWT = require("passport-jwt");
+const RBAC = require('rbac').default;
 
 const ExtractJwt = passportJWT.ExtractJwt;
 const JwtStrategy = passportJWT.Strategy;
@@ -17,24 +18,36 @@ const UserDB = [
     {
         id: 1,
         username: 'thanhdat1',
-        password: '1'
+        password: '1',
+        roles: ['admin']
     },
     {
         id: 2,
         username: 'thanhdat2',
-        password: '11'
+        password: '11',
+        roles: ['shop-manager', 'blog-manager']
     },
     {
         id: 3,
         username: 'thanhdat3',
-        password: '111'
+        password: '111',
+        roles: ['shop-manager']
     },
     {
         id: 4,
         username: 'thanhdat4',
-        password: '1111'
+        password: '1111',
+        roles: ['members']
     }
 ];
+
+app.use(function(req, res, next) {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    next();
+});
 
 app.use(session({
     cookie: {maxAge: (3600 * 1000)},
@@ -50,15 +63,103 @@ app.use(bodyParser.urlencoded({
     extended: true
 }));
 
+// Cấu hình rbac
+const rbac = new RBAC({
+    roles: ['admin', 'shopmanager', 'blogmanager', 'member'],
+    permissions: {
+        user: ['create', 'delete', 'view'],
+        password: ['change', 'forgot'],
+        blog: ['create', 'delete', 'view'],
+        product: ['create', 'delete', 'view']
+    },
+    grants: {
+        admin: ['create_user'],
+        shopmanager: ['create_product', 'delete_product', 'view_product'],
+        blogmanager: ['create_blog', 'delete_blog', 'view_blog'],
+        member: ['view_user', 'view_blog', 'view_product']
+    }
+}, (err, rbac) => {
+    if (err) throw err;
+    console.log(rbac);
+});
+
+app.use((req, res, next) => {
+    res.renderJson = (act, data = {}) => {
+        let roles = req.session.user.roles;
+        let n = roles.length;
+        let check = true;
+        for (let item = 0; item < n; item++) {
+            if(!check) {
+                continue;
+            }
+            if(check) {
+                if (item < n - 1) {
+                    act.forEach(item1 => {
+                        if(!check)
+                            return;
+
+                        rbac.can(roles[item], item1.key, item1.name, (err2, can) => {
+                            if(err2) {
+                                res.json({errRole: err2});
+                                check = false;
+                            }
+                            if (can) {
+                                res.json(data);
+                                check = false;
+                            }
+                        });
+                    });
+
+                } else {
+                    let n = act.length;
+                    act.forEach((item1, index) => {
+                        if(!check)
+                            return;
+
+                        if(index == n - 1) {
+                            rbac.can(roles[item], item1.key, item1.name, (err, can) => {
+                                if (err) {
+                                    res.json({errRole: err.message});
+                                }
+
+                                if (can) {
+                                    res.json(data)
+                                } else {
+                                    res.json({errRole: 'Permission denied!'})
+                                }
+                            });
+                        }else{
+                            rbac.can(roles[item], item1.key, item1.name, (err, can) => {
+                                if (err) {
+                                    res.json({errRole: err.message});
+                                    check = false;
+                                }
+
+                                if (can) {
+                                    res.json(data);
+                                    check = false;
+                                }
+                            });
+                        }
+                    });
+                }
+            }
+        }
+    };
+    next();
+});
+
+
+
+// Cấu hình jwt
 const jwtOptions = {
-    jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-    secretOrKey: 'tasmanianDevil',
-    issuer: 'http://localhost:3000'
+    jwtFromRequest: ExtractJwt.fromAuthHeaderWithScheme('jwt'),
+    secretOrKey: 'tasmanianDevil'
 };
 
-const strategy = new JwtStrategy({jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),secretOrKey: 'tasmanianDevil'}, (jwt_payload, next) => {
+const strategy = new JwtStrategy(jwtOptions, (jwt_payload, next) => {
     console.log('payload received', jwt_payload);
-    const user = UserDB[_.findIndex(users, {id: jwt_payload.id})];
+    const user = UserDB[_.findIndex(UserDB, {id: jwt_payload.id})];
     if (user) {
         next(null, user);
     } else {
@@ -67,31 +168,8 @@ const strategy = new JwtStrategy({jwtFromRequest: ExtractJwt.fromAuthHeaderAsBea
 });
 
 
-// app.use((req, res, next) => {
-//     // req.session.login = false;
-//     console.log(req.session)
-//     next();
-// });
-
 passport.use(strategy);
 app.use(passport.initialize());
-
-const saltRounds = 10;
-const myPlaintextPassword = 's0/\/\P4$$w0rD';
-const someOtherPlaintextPassword = 'not_bacon';
-
-app.use(function(req, res, next) {
-    res.header("Access-Control-Allow-Origin", "*");
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-    next();
-});
-
-
-
-// const cors = require('cors');
-// app.use(cors());
 
 
 app.get('/', (req, res) => {
@@ -104,8 +182,12 @@ app.get('/api/users', passport.authenticate('jwt', {session: false}), (req, res)
     res.json(UserDB)
 });
 
-app.get('/api/userbyid/:id', (req, res) => {
+app.get('/api/userbyid/:id', passport.authenticate('jwt', {session: false}), (req, res) => {
     res.json(UserDB.find(user => user.id == req.params.id) || '')
+});
+
+app.get('/api/userbyusername/:username', passport.authenticate('jwt', {session: false}), (req, res) => {
+    res.json(UserDB.find(user => user.username == req.params.username) || '')
 });
 
 
@@ -115,7 +197,7 @@ app.post("/api/register", (req, res) => {
     let username = req.body.username || '';
     let password = req.body.password || '';
     if (username && password) {
-        let checkUser = UserDB.find(user => user.username == username)
+        let checkUser = UserDB.find(user => user.username == username);
         if(checkUser){
             res.json({msgErr: 'Username đã được đăng ký.'})
         }else{
@@ -124,7 +206,7 @@ app.post("/api/register", (req, res) => {
                 username,
                 password
             };
-            UserDB.push(obj)
+            UserDB.push(obj);
             res.json({msg: 'Đăng ký thành công.'})
         }
     } else {
@@ -146,8 +228,10 @@ app.post("/api/login", (req, res) => {
                 const options = {
                   issuer: 'http://localhost:3000',
                   subject: 'secret micro service',
-                  expiresIn: 500 //Expire in 20 seconds
+                  expiresIn: 500 // Expire in 20 seconds
                 };
+
+                //Ký vào payload sử dụng secretOrKey
                 jwt.sign(payload, jwtOptions.secretOrKey, options, (err, token) => {
                     if (err) {
                         res.status(401).json({msgErr: "Fail to generate jwt token"});
