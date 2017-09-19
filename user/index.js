@@ -63,6 +63,28 @@ app.use(bodyParser.urlencoded({
     extended: true
 }));
 
+
+// Cấu hình jwt
+const jwtOptions = {
+    jwtFromRequest: ExtractJwt.fromAuthHeaderWithScheme('jwt'),
+    secretOrKey: 'tasmanianDevil'
+};
+
+const strategy = new JwtStrategy(jwtOptions, (jwt_payload, next) => {
+    console.log('payload received111', jwt_payload);
+    const user = UserDB[_.findIndex(UserDB, {id: jwt_payload.id})];
+    if (user) {
+        next(null, user);
+    } else {
+        next(null, false);
+    }
+});
+
+
+passport.use(strategy);
+app.use(passport.initialize());
+
+
 // Cấu hình rbac
 const rbac = new RBAC({
     roles: ['admin', 'shopmanager', 'blogmanager', 'member'],
@@ -83,93 +105,43 @@ const rbac = new RBAC({
     console.log(rbac);
 });
 
+/*
+roles: Quyền user
+act: router hiện tại có bao nhiêu permissions có thể truy cập
+ */
 app.use((req, res, next) => {
     res.renderJson = (act, data = {}) => {
-        let roles = req.session.user.roles;
-        let n = roles.length;
+        let roles = ['shopmanager', 'admin'];
+        let n = roles.length; // Đếm số roles
         let check = true;
         for (let item = 0; item < n; item++) {
             if(!check) {
                 continue;
             }
-            if(check) {
-                if (item < n - 1) {
-                    act.forEach(item1 => {
-                        if(!check)
-                            return;
+            let m = act.length; // Đếm xem có bao nhiêu quyền trong router hiện tại
+            act.forEach((item1, index) => {
+                if(!check)
+                    return;
 
-                        rbac.can(roles[item], item1.key, item1.name, (err2, can) => {
-                            if(err2) {
-                                res.json({errRole: err2});
-                                check = false;
-                            }
-                            if (can) {
-                                res.json(data);
-                                check = false;
-                            }
-                        });
-                    });
+                rbac.can(roles[item], item1.key, item1.name, (err, can) => {
+                    if (err) {
+                        check = false;
+                        res.json({errRole: err.message});
+                    }
 
-                } else {
-                    let n = act.length;
-                    act.forEach((item1, index) => {
-                        if(!check)
-                            return;
-
-                        if(index == n - 1) {
-                            rbac.can(roles[item], item1.key, item1.name, (err, can) => {
-                                if (err) {
-                                    res.json({errRole: err.message});
-                                }
-
-                                if (can) {
-                                    res.json(data)
-                                } else {
-                                    res.json({errRole: 'Permission denied!'})
-                                }
-                            });
-                        }else{
-                            rbac.can(roles[item], item1.key, item1.name, (err, can) => {
-                                if (err) {
-                                    res.json({errRole: err.message});
-                                    check = false;
-                                }
-
-                                if (can) {
-                                    res.json(data);
-                                    check = false;
-                                }
-                            });
-                        }
-                    });
-                }
-            }
+                    if (can) {
+                        check = false;
+                        res.json(data)
+                    } else if(index == m - 1 && item == n-1) {
+                        check = false;
+                        res.json({errRole: 'Permission denied!'})
+                    }
+                });
+            });
         }
     };
     next();
 });
-
-
-
-// Cấu hình jwt
-const jwtOptions = {
-    jwtFromRequest: ExtractJwt.fromAuthHeaderWithScheme('jwt'),
-    secretOrKey: 'tasmanianDevil'
-};
-
-const strategy = new JwtStrategy(jwtOptions, (jwt_payload, next) => {
-    console.log('payload received', jwt_payload);
-    const user = UserDB[_.findIndex(UserDB, {id: jwt_payload.id})];
-    if (user) {
-        next(null, user);
-    } else {
-        next(null, false);
-    }
-});
-
-
-passport.use(strategy);
-app.use(passport.initialize());
 
 
 app.get('/', (req, res) => {
@@ -179,7 +151,11 @@ app.get('/', (req, res) => {
 //Hàm này yêu cầu bảo mật, có một middle ware đứng giữa là passport.authenticate
 //Session = false để lần nào request cũng phải authenticate chứ không kiểm tra user có trong session
 app.get('/api/users', passport.authenticate('jwt', {session: false}), (req, res) => {
-    res.json(UserDB)
+    let act = [
+        { key: 'view', name: 'user'},
+        { key: 'view', name: 'product'},
+    ];
+    res.renderJson(act, UserDB)
 });
 
 app.get('/api/userbyid/:id', passport.authenticate('jwt', {session: false}), (req, res) => {
@@ -203,6 +179,7 @@ app.post("/api/register", (req, res) => {
         }else{
             let obj = {
                 id: shortid.generate(),
+                roles: ['member'],
                 username,
                 password
             };
@@ -223,22 +200,26 @@ app.post("/api/login", (req, res) => {
         let checkUser = UserDB.find(user => user.username == username);
         if(checkUser) {
             if(checkUser.password === password){
-                let payload = {id: checkUser.id};
+                let payload = {
+                    id: checkUser.id,
+                    roles: checkUser.roles
+                };
 
                 const options = {
                   issuer: 'http://localhost:3000',
                   subject: 'secret micro service',
-                  expiresIn: 500 // Expire in 20 seconds
+                  expiresIn: 500 // Expire in 500 seconds
                 };
 
                 //Ký vào payload sử dụng secretOrKey
-                jwt.sign(payload, jwtOptions.secretOrKey, options, (err, token) => {
+                jwt.sign(payload, jwtOptions.secretOrKey, (err, token) => {
                     if (err) {
                         res.status(401).json({msgErr: "Fail to generate jwt token"});
                     } else {
                         res.json({
                             msg: 'ok',
-                            token
+                            token,
+                            username
                         });
                     }
                 });
