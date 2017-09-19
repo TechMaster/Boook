@@ -1,6 +1,18 @@
-# Cấu hình + sử dụng
+# User service for boook.com
 
-### Cài đặt
+## Chạy
+```
+npm i
+node index.js
+```
+
+## JWT
+
+Người dùng đăng nhập thành công sẽ trả về 1 token.
+
+Một số router sẽ bắt người dùng phải đăng nhập mới xem được thì khi đó người dùng muốn truy cập trang thì sẽ phải gửi token từ client lên server qua  để kiểm tra.
+
+#### Cài đặt
 
 ```
 npm i --save express-session
@@ -9,18 +21,18 @@ npm i --save passport
 npm i --save passport-jwt
 ```
 
-### Cấu hình
+#### Cấu hình
 
+`new JwtStrategy`: Mỗi lần gửi token lên server qua request headers thì sẽ decode lấy được payload. Từ payload sẽ lấy được thông tin user đăng nhập.
 ```javascript
 const ExtractJwt = passportJWT.ExtractJwt;
 const JwtStrategy = passportJWT.Strategy;
 const jwtOptions = {
-    jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+    jwtFromRequest: ExtractJwt.fromAuthHeaderWithScheme('jwt'),
     secretOrKey: 'tasmanianDevil',
     issuer: 'http://localhost:3000'
 };
 const strategy = new JwtStrategy(jwtOptions, (jwt_payload, next) => {
-    console.log('payload received', jwt_payload);
     const user = users[_.findIndex(users, {id: jwt_payload.id})];
     if (user) {
         next(null, user);
@@ -32,7 +44,7 @@ passport.use(strategy);
 app.use(passport.initialize());
 ```
 
-### Gửi từ host khác
+#### Gửi từ host khác
 
 Muốn host khác yêu cầu dữ liệu từ server thì cần phải có:
 ```javascript
@@ -50,8 +62,9 @@ app.use(bodyParser.urlencoded({
 }));
 ```
 
-### Tạo token khi đăng nhập thành công
+#### Tạo token khi đăng nhập thành công
 
+`payload`: lưu khóa chính hoặc trường nào là unique để dựa vào đó ta lấy được user
 ```javascript
 //Lấy id user
 let payload = {id: checkUser.id};
@@ -59,7 +72,7 @@ let payload = {id: checkUser.id};
 const options = {
   issuer: 'http://localhost:3000',
   subject: 'secret micro service',
-  expiresIn: 50 //Expire in 20 seconds
+  expiresIn: 500 //Expire in 500 seconds
 };
 // jwtOptions.secretOrKey được lấy ở phần cấu hình
 // Tạo ra token
@@ -75,7 +88,108 @@ jwt.sign(payload, jwtOptions.secretOrKey, options, (err, token) => {
 });
 ```
 
+## RBAC (Role-based access control): phân quyền
 
+#### Cài đặt
+
+```
+npm i --save rbac
+```
+
+#### Cấu hình
+
+```javascript
+const RBAC = require('rbac').default;
+//.
+const rbac = new RBAC({
+  // Tất cả roles có trong user service
+  roles: ['superadmin', 'admin', 'user', 'guest'],
+  // 
+  permissions: {
+    user: ['create', 'delete'],
+    password: ['change', 'forgot'],
+    article: ['create'],
+    rbac: ['update']
+  },
+  // 
+  grants: {
+    guest: ['create_user', 'forgot_password'],
+    user: ['change_password'],
+    admin: ['user', 'delete_user', 'update_rbac'],
+    superadmin: ['admin']
+  }
+}, function(err, rbacInstance) {
+  if (err) {
+    throw err;
+  }
+});
+```
+
+#### Kiểm tra quyền 
+
+Cơ bản
+
+```javascript
+rbac.getRole('admin', (err, admin) => {
+  if (err) {
+    throw err;
+  }
+
+  if (!admin) {
+    return console.log('Role does not exists');
+  }
+
+  admin.can('create', 'article', (err2, can) => {
+    if (err2) throw err2;
+
+    if (can) {
+      console.log('Admin is able create article');    
+    }
+  });
+});
+```
+
+Áp dụng vào user service
+
+- Một user có nhiều quyền: roles
+
+- Một router có nhiều permissions: act
+
+```javascript
+app.use((req, res, next) => {
+    res.renderJson = (act, data = {}) => {
+        let roles = ['shopmanager', 'admin'];
+        let n = roles.length; // Đếm số roles
+        let check = true;
+        for (let item = 0; item < n; item++) {
+            if(!check) {
+                continue;
+            }
+            let m = act.length; // Đếm xem có bao nhiêu quyền trong router hiện tại
+            act.forEach((item1, index) => {
+                if(!check)
+                    return;
+    
+                rbac.can(roles[item], item1.key, item1.name, (err, can) => {
+                    if (err) {
+                        check = false;
+                        res.json({errRole: err.message});
+                    }
+    
+                    if (can) {
+                        check = false;
+                        res.json(data)
+                    } else if(index == m - 1 && item == n-1) {
+                        check = false;
+                        res.json({errRole: 'Permission denied!'})
+                    }
+                });
+            });
+        }
+    };
+    next();
+});
+```
 
 # User API
 
