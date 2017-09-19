@@ -38,6 +38,12 @@ const UserDB = [
         username: 'thanhdat4',
         password: '1111',
         roles: ['members']
+    },
+    {
+        id: 0,
+        username: 'fakeUser',
+        password: 'fakeUser',
+        roles: ['admin']
     }
 ];
 
@@ -238,7 +244,8 @@ app.post("/api/login", (req, res) => {
                     } else {
                         res.json({
                             msg: 'ok',
-                            token
+                            token,
+                            username
                         });
                     }
                 });
@@ -253,6 +260,6 @@ app.post("/api/login", (req, res) => {
     }
 });
 
-const server = app.listen(3000, function () {
-    console.log('Example app listening on port 3000!')
+const server = app.listen(3003, function () {
+    console.log('Example app listening on port 3003!')
 });
